@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>SpotyFold - accesso Spotify</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #222; }
+  h1 { font-size: 1.3rem; }
+  textarea { width: 100%; box-sizing: border-box; height: 9rem; font-family: monospace; font-size: .85rem; padding: .5rem; }
+  button { font-size: 1rem; padding: .6rem 1.2rem; margin-top: .5rem; }
+  .err { color: #b00020; }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<h1>SpotyFold: accesso Spotify</h1>
+<p id="msg"></p>
+<div id="manual" hidden>
+  <textarea id="code" readonly></textarea>
+  <button id="copy" type="button">Copia il codice</button>
+</div>
+
+<script>
+// La pagina non contiene chiavi e non invia dati a nessun server.
+// Riceve la risposta di Spotify e:
+// - se "state" contiene l'indirizzo locale della scheda (es. 192.168.1.50~abc123), rimanda il browser alla scheda;
+// - altrimenti mostra il codice temporaneo da copiare.
+
+function isPrivateIp(ip) {
+  var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!m) return false;
+  var a = m.slice(1).map(Number);
+  if (a.some(function (n) { return n > 255; })) return false;
+  return a[0] === 10 ||
+         (a[0] === 172 && a[1] >= 16 && a[1] <= 31) ||
+         (a[0] === 192 && a[1] === 168);
+}
+
+function decide(search) {
+  var p = new URLSearchParams(search);
+  var error = p.get("error");
+  var code = p.get("code");
+  var state = p.get("state") || "";
+  if (error) return { type: "error", error: error };
+  if (!code) return { type: "idle" };
+  var parts = state.split("~");
+  if (parts.length === 2 && parts[1] && isPrivateIp(parts[0])) {
+    return {
+      type: "device",
+      url: "http://" + parts[0] + "/callback?code=" + encodeURIComponent(code) +
+           "&state=" + encodeURIComponent(parts[1])
+    };
+  }
+  return { type: "manual", code: code };
+}
+
+(function () {
+  var msg = document.getElementById("msg");
+  var action = decide(location.search);
+
+  // Toglie il codice dalla barra degli indirizzi e dalla cronologia.
+  if (action.type !== "idle") history.replaceState(null, "", location.pathname);
+
+  if (action.type === "error") {
+    msg.className = "err";
+    msg.textContent = "Spotify non ha concesso l'accesso (" + action.error + "). Riprova.";
+  } else if (action.type === "device") {
+    msg.textContent = "Accesso riuscito. Ritorno al display...";
+    location.replace(action.url);
+  } else if (action.type === "manual") {
+    msg.textContent = "Accesso riuscito. Copia questo codice temporaneo: vale pochi minuti e si può usare una sola volta.";
+    var box = document.getElementById("code");
+    var btn = document.getElementById("copy");
+    box.value = action.code;
+    document.getElementById("manual").hidden = false;
+    btn.addEventListener("click", function () {
+      box.select();
+      var done = function () { btn.textContent = "Copiato"; };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(box.value).then(done, function () { document.execCommand("copy"); done(); });
+      } else {
+        document.execCommand("copy");
+        done();
+      }
+    });
+  } else {
+    msg.textContent = "Questa pagina serve solo a completare l'accesso a Spotify del display SpotyFold. Qui non c'è nulla da fare.";
+  }
+})();
+</script>
+</body>
+</html>
